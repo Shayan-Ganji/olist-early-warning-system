@@ -1,0 +1,95 @@
+================================================================================
+POSTGRESQL FEATURE EXTRACTION QUERY EXECUTION PLANS
+Target SLA: Latency < 500 ms
+================================================================================
+
+--- PLAN 1: Point Lookup for Live Single-Order Scoring (View) ---
+Query: SELECT * FROM olist.view_order_early_warning_features WHERE order_id = 'e481f51cbdc54678b7cc49136f2d6af7';
+--------------------------------------------------------------------------------
+Nested Loop Left Join  (cost=51.76..76.02 rows=1 width=469) (actual time=0.873..0.877 rows=1 loops=1)
+  Buffers: shared hit=25 read=12
+  ->  Nested Loop Left Join  (cost=51.34..67.52 rows=1 width=373) (actual time=0.838..0.841 rows=1 loops=1)
+        Buffers: shared hit=24 read=9
+        ->  Nested Loop Left Join  (cost=9.28..25.37 rows=1 width=145) (actual time=0.746..0.747 rows=1 loops=1)
+              Buffers: shared hit=9 read=5
+              ->  Nested Loop  (cost=0.83..16.87 rows=1 width=93) (actual time=0.698..0.699 rows=1 loops=1)
+                    Buffers: shared hit=5 read=3
+                    ->  Index Scan using orders_pkey on orders o  (cost=0.42..8.44 rows=1 width=90) (actual time=0.208..0.208 rows=1 loops=1)
+                          Index Cond: (order_id = 'e481f51cbdc54678b7cc49136f2d6af7'::bpchar)
+                          Filter: (order_approved_at IS NOT NULL)
+                          Buffers: shared hit=3 read=1
+                    ->  Index Scan using customers_pkey on customers c  (cost=0.42..8.44 rows=1 width=36) (actual time=0.488..0.488 rows=1 loops=1)
+                          Index Cond: (customer_id = o.customer_id)
+                          Buffers: shared hit=2 read=2
+              ->  GroupAggregate  (cost=8.45..8.48 rows=1 width=85) (actual time=0.046..0.047 rows=1 loops=1)
+                    Buffers: shared hit=4 read=2
+                    ->  Sort  (cost=8.45..8.45 rows=1 width=53) (actual time=0.040..0.040 rows=3 loops=1)
+                          Sort Key: order_payments.payment_type
+                          Sort Method: quicksort  Memory: 25kB
+                          Buffers: shared hit=4 read=2
+                          ->  Index Scan using idx_order_payments_order_id on order_payments  (cost=0.42..8.44 rows=1 width=53) (actual time=0.027..0.029 rows=3 loops=1)
+                                Index Cond: (order_id = 'e481f51cbdc54678b7cc49136f2d6af7'::bpchar)
+                                Buffers: shared hit=4 read=2
+        ->  GroupAggregate  (cost=42.06..42.13 rows=1 width=261) (actual time=0.091..0.092 rows=1 loops=1)
+              Buffers: shared hit=15 read=4
+              ->  Sort  (cost=42.06..42.07 rows=1 width=145) (actual time=0.081..0.082 rows=1 loops=1)
+                    Sort Key: oi.product_id
+                    Sort Method: quicksort  Memory: 25kB
+                    Buffers: shared hit=15 read=4
+                    ->  Nested Loop Left Join  (cost=1.95..42.05 rows=1 width=145) (actual time=0.078..0.080 rows=1 loops=1)
+                          Buffers: shared hit=15 read=4
+                          ->  Nested Loop  (cost=1.53..33.62 rows=1 width=121) (actual time=0.054..0.055 rows=1 loops=1)
+                                Buffers: shared hit=13 read=2
+                                ->  Nested Loop  (cost=1.25..25.32 rows=1 width=118) (actual time=0.041..0.042 rows=1 loops=1)
+                                      Buffers: shared hit=11 read=1
+                                      ->  Nested Loop  (cost=0.83..16.88 rows=1 width=148) (actual time=0.033..0.034 rows=1 loops=1)
+                                            Buffers: shared hit=7 read=1
+                                            ->  Index Scan using order_items_pkey on order_items oi  (cost=0.42..8.44 rows=1 width=115) (actual time=0.022..0.022 rows=1 loops=1)
+                                                  Index Cond: (order_id = 'e481f51cbdc54678b7cc49136f2d6af7'::bpchar)
+                                                  Buffers: shared hit=3 read=1
+                                            ->  Index Scan using orders_pkey on orders o_1  (cost=0.42..8.44 rows=1 width=66) (actual time=0.010..0.011 rows=1 loops=1)
+                                                  Index Cond: (order_id = 'e481f51cbdc54678b7cc49136f2d6af7'::bpchar)
+                                                  Buffers: shared hit=4
+                                      ->  Index Scan using customers_pkey on customers c_1  (cost=0.42..8.44 rows=1 width=36) (actual time=0.006..0.007 rows=1 loops=1)
+                                            Index Cond: (customer_id = o_1.customer_id)
+                                            Buffers: shared hit=4
+                                ->  Index Scan using sellers_pkey on sellers s  (cost=0.28..8.30 rows=1 width=36) (actual time=0.012..0.012 rows=1 loops=1)
+                                      Index Cond: (seller_id = oi.seller_id)
+                                      Buffers: shared hit=2 read=1
+                          ->  Index Scan using products_pkey on products p  (cost=0.41..8.43 rows=1 width=57) (actual time=0.024..0.024 rows=1 loops=1)
+                                Index Cond: (product_id = oi.product_id)
+                                Buffers: shared hit=2 read=2
+  ->  GroupAggregate  (cost=0.42..8.45 rows=1 width=37) (actual time=0.030..0.030 rows=1 loops=1)
+        Buffers: shared hit=1 read=3
+        ->  Index Scan using idx_order_reviews_order_id on order_reviews  (cost=0.42..8.44 rows=1 width=37) (actual time=0.029..0.029 rows=1 loops=1)
+              Index Cond: (order_id = 'e481f51cbdc54678b7cc49136f2d6af7'::bpchar)
+              Buffers: shared hit=1 read=3
+Planning:
+  Buffers: shared hit=61 read=7
+Planning Time: 3.474 ms
+Execution Time: 0.982 ms
+
+================================================================================
+--- PLAN 2: Monthly Cohort Filter (August 2018 Final Evaluation Set) ---
+Query: SELECT * FROM olist.mv_order_early_warning_features WHERE order_approved_at >= '2018-08-01' AND order_approved_at < '2018-09-01';
+--------------------------------------------------------------------------------
+Bitmap Heap Scan on mv_order_early_warning_features  (cost=13.38..1345.06 rows=496 width=676) (actual time=0.739..2.853 rows=6620 loops=1)
+  Recheck Cond: ((order_approved_at >= '2018-08-01 00:00:00+04:30'::timestamp with time zone) AND (order_approved_at < '2018-09-01 00:00:00+04:30'::timestamp with time zone))
+  Heap Blocks: exact=2823
+  Buffers: shared hit=2823 read=19 dirtied=2238
+  ->  Bitmap Index Scan on idx_mv_early_warning_approved_at  (cost=0.00..13.25 rows=496 width=0) (actual time=0.507..0.507 rows=6620 loops=1)
+        Index Cond: ((order_approved_at >= '2018-08-01 00:00:00+04:30'::timestamp with time zone) AND (order_approved_at < '2018-09-01 00:00:00+04:30'::timestamp with time zone))
+        Buffers: shared read=19
+Planning:
+  Buffers: shared hit=46 read=3
+Planning Time: 1.641 ms
+Execution Time: 3.063 ms
+
+================================================================================
+--- PLAN 3: Full Table Scan for Training Dataset (99k orders) ---
+Query: SELECT * FROM olist.mv_order_early_warning_features;
+--------------------------------------------------------------------------------
+Seq Scan on mv_order_early_warning_features  (cost=0.00..4256.81 rows=99281 width=676) (actual time=0.005..6.550 rows=99281 loops=1)
+  Buffers: shared hit=3264 dirtied=297
+Planning Time: 0.034 ms
+Execution Time: 8.745 ms
