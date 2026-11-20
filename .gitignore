@@ -42,5 +42,6 @@ ENV/
 
 # MLflow and SQLite
 *.db
+!mlruns.db
 mlruns/
 mlartifacts/

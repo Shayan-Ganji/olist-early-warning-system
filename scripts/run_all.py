@@ -19,6 +19,7 @@ sys.path.insert(0, str(_project_root))
 sys.path.insert(0, str(_project_root / "scripts"))
 sys.path.insert(0, str(_project_root / "src"))
 
+
 def run_master_pipeline():
     start_time = time.time()
     print("=" * 80)
@@ -49,7 +50,9 @@ def run_master_pipeline():
     X_tr, y_tr, X_te, y_te, m_tr, m_te = trainer.load_and_split_data()
     trainer.train_baseline_logistic(X_tr, y_tr, X_te, y_te, m_te)
     res_lgb = trainer.train_production_lightgbm(X_tr, y_tr, X_te, y_te, m_te)
-    print(f"  Production LightGBM Capture Rate @ 10%: {res_lgb['capture_rate_10pct']*100:.2f}% | Lift: {res_lgb['lift_10pct']:.2f}x")
+    cap_rate = res_lgb['capture_rate_10pct'] * 100
+    lift_val = res_lgb['lift_10pct']
+    print(f"  Production LightGBM Capture Rate @ 10%: {cap_rate:.2f}% | Lift: {lift_val:.2f}x")
     print(f"  August 2018 (Final Month) Capture Rate @ 10%: {res_lgb['august_capture_rate_10pct']*100:.2f}%")
 
     # 4. Leakage Benchmark
@@ -95,6 +98,7 @@ def run_master_pipeline():
     print(f"MASTER PIPELINE COMPLETED SUCCESSFULLY IN {elapsed:.2f} SECONDS ({elapsed/60.0:.2f} MINUTES)!")
     print("Execution is well within the 45-minute capstone budget.")
     print("=" * 80)
+
 
 if __name__ == "__main__":
     run_master_pipeline()

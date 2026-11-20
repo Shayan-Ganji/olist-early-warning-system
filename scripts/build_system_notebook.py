@@ -3,6 +3,7 @@
 import nbformat as nbf
 from pathlib import Path
 
+
 def create_system_notebook():
     nb = nbf.v4.new_notebook()
     nb.metadata = {
@@ -21,7 +22,7 @@ def create_system_notebook():
 
     # Cell 1: Title and Metadata
     cells.append(nbf.v4.new_markdown_cell(
-        "# Early Warning Decision Engine: Production Pipeline, MLflow Tracking & Capacity Evaluation\n"
+        "# چالش نهایی: پیاده‌سازی سیستم عملیاتی، ردیابی MLflow و ارزیابی مقید به ظرفیت\n"
         "**دانشجو:** شایان گنجی  \n"
         "**آزمایشگاه:** فناوری های مالی داتین- ترم سوم  \n"
         "**پایگاه‌داده هدف:** PostgreSQL 16.4 | دیتابیس `olist_db`"
@@ -52,8 +53,8 @@ def create_system_notebook():
 
     # Cell 3: Section 1 Markdown
     cells.append(nbf.v4.new_markdown_cell(
-        "## 1. In-Database Feature Engineering & Zero-Leakage Validation\n"
-        "<div dir='rtl'>استخراج ویژگی‌های پایگاه‌داده و اجرای گارد نظارتی عدم نشت زمانی در لحظه T0</div>"
+        "## ۱. استخراج ویژگی‌ها از پایگاه‌داده و اعتبارسنجی نشت داده\n"
+        "استخراج ویژگی‌های تاییدشده از جدول ماتریسی PostgreSQL در کمتر از ۳ میلی‌ثانیه و اجرای گارد نظارتی ضد نشت."
     ))
 
     # Cell 4: Section 1 Code
@@ -72,8 +73,8 @@ def create_system_notebook():
 
     # Cell 5: Section 2 Markdown
     cells.append(nbf.v4.new_markdown_cell(
-        "## 2. End-to-End Model Training & MLflow Experiment Tracking\n"
-        "<div dir='rtl'>آموزش مدل‌های پایه و تولید، ردیابی هایپرپارامترها و ثبت آزمایش‌ها در MLflow</div>"
+        "## ۲. آموزش مدل‌ها و مقایسه با خطوط مبنای سرانگشتی\n"
+        "تقسیم زمانی در ۱ مارس ۲۰۱۸، آموزش رگرسیون لوجستیک پایه و مدل نهایی LightGBM با ثبت آزمایش‌ها در MLflow."
     ))
 
     # Cell 6: Section 2 Code
@@ -83,18 +84,20 @@ def create_system_notebook():
         "\n"
         "# 1. Train Baseline Logistic Regression\n"
         "res_lr = trainer.train_baseline_logistic(X_train, y_train, X_test, y_test, meta_test)\n"
-        "print(f'Baseline Logistic @ 10%: Capture Rate = {res_lr[\"capture_rate_10pct\"]*100:.2f}%, Precision = {res_lr[\"precision_10pct\"]*100:.2f}%, Lift = {res_lr[\"lift_10pct\"]:.2f}x')\n"
+        "print(f'Baseline Logistic @ 10%: Capture Rate = {res_lr[\"capture_rate_10pct\"]*100:.2f}%, "
+        "Precision = {res_lr[\"precision_10pct\"]*100:.2f}%, Lift = {res_lr[\"lift_10pct\"]:.2f}x')\n"
         "\n"
         "# 2. Train Production LightGBM\n"
         "res_lgb = trainer.train_production_lightgbm(X_train, y_train, X_test, y_test, meta_test)\n"
-        "print(f'Production LightGBM @ 10%: Capture Rate = {res_lgb[\"capture_rate_10pct\"]*100:.2f}%, Precision = {res_lgb[\"precision_10pct\"]*100:.2f}%, Lift = {res_lgb[\"lift_10pct\"]:.2f}x')\n"
+        "print(f'Production LightGBM @ 10%: Capture Rate = {res_lgb[\"capture_rate_10pct\"]*100:.2f}%, "
+        "Precision = {res_lgb[\"precision_10pct\"]*100:.2f}%, Lift = {res_lgb[\"lift_10pct\"]:.2f}x')\n"
         "print(f'August 2018 (Final Month) Capture Rate @ 10%: {res_lgb[\"august_capture_rate_10pct\"]*100:.2f}%')"
     ))
 
     # Cell 7: Section 3 Markdown
     cells.append(nbf.v4.new_markdown_cell(
-        "## 3. MLflow Tracking Inspection & Run Comparison\n"
-        "<div dir='rtl'>بررسی متادیتا، پارامترها و معیارهای ثبت‌شده در رجیستری محلی MLflow</div>"
+        "## ۳. بازرسی ردیابی آزمایش‌ها در MLflow\n"
+        "بررسی ۵۴ ران ثبت‌شده در دیتابیس محلی SQLite و ارزیابی ساختار والد-فرزند برای کوهورت‌های زمانی ماهانه."
     ))
 
     # Cell 8: Section 3 Code
@@ -120,8 +123,8 @@ def create_system_notebook():
 
     # Cell 9: Section 4 Markdown
     cells.append(nbf.v4.new_markdown_cell(
-        "## 4. Operational Capacity Portfolio Evaluation (5%, 10%, 20% Quotas)\n"
-        "<div dir='rtl'>ارزیابی عملکرد عملیاتی در سبد ظرفیت‌های مختلف تماس تیم پشتیبانی مشتریان</div>"
+        "## ۴. ارزیابی سبد ظرفیت عملیاتی (سهمیه‌های ۵٪، ۱۰٪ و ۲۰٪)\n"
+        "سنجش بازدهی تیم عملیات در سهمیه‌های مختلف تماس، محاسبه نرخ شکار و آستانه‌های احتمال کالیبره‌شده."
     ))
 
     # Cell 10: Section 4 Code
@@ -153,8 +156,8 @@ def create_system_notebook():
 
     # Cell 11: Section 5 Markdown
     cells.append(nbf.v4.new_markdown_cell(
-        "## 5. Standalone Evaluation on August 2018 (Final Month)\n"
-        "<div dir='rtl'>ارزیابی اختصاصی عملکرد سیستم در آخرین ماه ارزیابی (آگوست ۲۰۱۸) طبق الزام صورت مسئله</div>"
+        "## ۵. ارزیابی مستقل روی ماه پایانی (آگوست ۲۰۱۸)\n"
+        "سنجش توان تعمیم مدل در آخرین ماه داده‌ها برای اعتبارسنجی پایداری و عدم بیش‌برازش در شرایط استقرار زنده."
     ))
 
     # Cell 12: Section 5 Code
@@ -179,8 +182,8 @@ def create_system_notebook():
 
     # Cell 13: Section 6 Markdown
     cells.append(nbf.v4.new_markdown_cell(
-        "## 6. Multi-Period Temporal Walk-Forward Backtesting (Stability Analysis)\n"
-        "<div dir='rtl'>تحلیل پایداری زمانی و بک‌تست مدل در تمامی ماه‌های آزمون (مارس تا آگوست ۲۰۱۸)</div>"
+        "## ۶. پایداری زمانی و بک‌تست ماه به ماه (مارس تا آگوست ۲۰۱۸)\n"
+        "ارزیابی پایداری مدل در تک‌تک ۶ ماه مستقل دوره آزمون و اندازه‌گیری جابه‌جایی توزیع متغیرها (Drift)."
     ))
 
     # Cell 14: Section 6 Code
@@ -209,8 +212,8 @@ def create_system_notebook():
 
     # Cell 15: Section 7 Markdown
     cells.append(nbf.v4.new_markdown_cell(
-        "## 7. Priority Intervention Follow-Up Queue Export\n"
-        "<div dir='rtl'>تولید خروجی نهایی فهرست سفارش‌های پرخطر جهت اقدام فوری تیم پشتیبانی عملیات</div>"
+        "## ۷. استخراج صف اولویت تماس برای تیم عملیات\n"
+        "تولید و صدور فهرست ۶۵۳ سفارش ماه آگوست دارای بالاترین ریسک نارضایتی در قالب فایل CSV جهت اقدام تیم پشتیبانی."
     ))
 
     # Cell 16: Section 7 Code
@@ -234,15 +237,13 @@ def create_system_notebook():
 
     # Cell 17: Final Section Markdown
     cells.append(nbf.v4.new_markdown_cell(
-        "## 8. Operational Conclusion & Next Steps\n"
-        "<div dir='rtl'>جمع‌بندی دستاوردهای مهندسی سیستم، انطباق با محدودیت‌های عملیاتی و آماده‌سازی گزارش نهایی</div>\n"
-        "\n"
-        "Key Accomplishments:\n"
-        "1. **Zero Temporal Leakage**: Formally proven and audited with runtime guard.\n"
-        "2. **Operational SLA**: Sub-millisecond in-database feature engineering (< 10 ms vs 500 ms SLA).\n"
-        "3. **Capacity Target**: Captures **21.20%** of negative reviews at 10% capacity with **2.12x Lift** across test set, and **21.01%** in August 2018.\n"
-        "4. **MLflow Governance**: Full model lineage, parameter tracking, and multi-period child backtests registered in `mlruns.db`.\n"
-        "5. **Production Ready**: Standalone CLI (`early-warning`) and inference engine for real-time order scoring."
+        "## ۸. جمع‌بندی نهایی نتایج و خروجی صف اولویت\n"
+        "خلاصه دستاوردهای مهندسی سیستم:\n"
+        "۱. **عدم نشت داده:** ممیزی و گارد نظارتی ضد نشت زمانی در سطح تست و پایپ‌لاین پیش‌بینی تضمین شد.\n"
+        "۲. **سرعت پایگاه‌داده:** زمان پاسخگویی استخراج ویژگی‌ها زیر ۳ میلی‌ثانیه تثبیت شد (سقف توافق ۵۰۰ میلی‌ثانیه).\n"
+        "۳. **هدف ظرفیت عملیاتی:** شکار ۲۱.۲۰٪ نظرات منفی در سهمیه ۱۰٪ با ضریب اثربخشی ۲.۱۲ برابر در کل دوره آزمون و ۲۱.۰۱٪ در ماه آگوست.\n"
+        "۴. **ردیابی با MLflow:** ثبت شفاف شجره مدل، پارامترها و بک‌تست کوهورت‌های ۶ ماهه در پایگاه‌داده محلی SQLite.\n"
+        "۵. **آمادگی عملیات:** پیاده‌سازی رابط خط فرمان (`early-warning`) و صدور فایل اولویت تماس برای تیم پشتیبانی."
     ))
 
     nb.cells = cells
@@ -251,6 +252,6 @@ def create_system_notebook():
         nbf.write(nb, f)
     print(f"Generated {out_path} with {len(cells)} cells.")
 
+
 if __name__ == "__main__":
     create_system_notebook()
-

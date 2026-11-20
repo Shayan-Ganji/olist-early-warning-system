@@ -1,7 +1,7 @@
 """Database Feature View deployment and EXPLAIN plan generator."""
 
-import time
 import psycopg2
+
 
 def deploy_views_and_capture_plans():
     conn = psycopg2.connect(
@@ -57,10 +57,14 @@ def deploy_views_and_capture_plans():
     ]
     output_lines.extend(row[0] for row in plan_single)
 
+    aug_query = (
+        "SELECT * FROM olist.mv_order_early_warning_features "
+        "WHERE order_approved_at >= '2018-08-01' AND order_approved_at < '2018-09-01';"
+    )
     output_lines.extend([
         "\n" + "=" * 80,
         "--- PLAN 2: Monthly Cohort Filter (August 2018 Final Evaluation Set) ---",
-        "Query: SELECT * FROM olist.mv_order_early_warning_features WHERE order_approved_at >= '2018-08-01' AND order_approved_at < '2018-09-01';",
+        f"Query: {aug_query}",
         "-" * 80,
     ])
     output_lines.extend(row[0] for row in plan_batch)
@@ -92,6 +96,6 @@ def deploy_views_and_capture_plans():
     cur.close()
     conn.close()
 
+
 if __name__ == "__main__":
     deploy_views_and_capture_plans()
-

@@ -3,6 +3,7 @@
 import nbformat as nbf
 from pathlib import Path
 
+
 def create_exploration_notebook():
     nb = nbf.v4.new_notebook()
     nb.metadata = {
@@ -21,7 +22,7 @@ def create_exploration_notebook():
 
     # Cell 1: Title and Metadata
     cells.append(nbf.v4.new_markdown_cell(
-        "# Early Warning Decision Engine: Exploration, Temporal Audit, and Data Leakage Benchmark\n"
+        "# چالش نهایی (Capstone): اکتشاف، ممیزی زمانی و بنچمارک نشت داده\n"
         "**دانشجو:** شایان گنجی  \n"
         "**آزمایشگاه:** فناوری های مالی داتین- ترم سوم  \n"
         "**پایگاه‌داده هدف:** PostgreSQL 16.4 | دیتابیس `olist_db`"
@@ -50,8 +51,8 @@ def create_exploration_notebook():
 
     # Cell 3: Section 1 Markdown
     cells.append(nbf.v4.new_markdown_cell(
-        "## 1. Problem Formulation & Class Distribution Analysis\n"
-        "<div dir='rtl'>فرمول‌بندی مسئله در لحظه تایید سفارش و بررسی نرخ پایه نظرات منفی مشتریان</div>"
+        "## ۱. تحلیل مسئله و توزیع نظرات خریداران\n"
+        "فرمول‌بندی مسئله در لحظه تایید پرداخت ($T_0$) و تحلیل نرخ پایه نظرات منفی خریداران (امتیاز ۱ و ۲)."
     ))
 
     # Cell 4: Section 1 Code
@@ -87,8 +88,8 @@ def create_exploration_notebook():
 
     # Cell 5: Section 2 Markdown
     cells.append(nbf.v4.new_markdown_cell(
-        "## 2. Complete Schema Temporal Audit Registry\n"
-        "<div dir='rtl'>ممیزی چرخه حیات زمانی تمامی ستون‌های پایگاه‌داده نسبت به لحظه تصمیم‌گیری T0</div>"
+        "## ۲. ممیزی زمانی ۴۵ ستون پایگاه‌داده اولیست\n"
+        "طبقه‌بندی وضعیت فیلدها نسبت به مرز تصمیم‌گیری $T_0$ جهت پیشگیری قطعی از نشت داده به آینده."
     ))
 
     # Cell 6: Section 2 Code
@@ -105,8 +106,8 @@ def create_exploration_notebook():
 
     # Cell 7: Section 3 Markdown
     cells.append(nbf.v4.new_markdown_cell(
-        "## 3. External API Evaluation & Rejection Rationale\n"
-        "<div dir='rtl'>ارزیابی تجربی منابع داده بیرونی، اثبات عدم نشت داده تقویم رسمی و دلایل رد سایر منابع</div>"
+        "## ۳. ارزیابی منابع بیرونی داده (API) و ابطال فرضیه‌ها\n"
+        "آزمون شرایط جوی (Open-Meteo) و داده‌های کلان در برابر گزینش تقویم رسمی تعطیلات برزیل (BrasilAPI)."
     ))
 
     # Cell 8: Section 3 Code
@@ -127,8 +128,8 @@ def create_exploration_notebook():
 
     # Cell 9: Section 4 Markdown
     cells.append(nbf.v4.new_markdown_cell(
-        "## 4. Empirical Data Leakage Benchmark (Deceptive Gap Quantification)\n"
-        "<div dir='rtl'>آزمون تجربی مقایسه مدل سالم در برابر مدل آلوده به نشت و سنجش شکاف فریبنده عملکرد</div>"
+        "## ۴. بنچمارک تجربی نشت داده و شکاف فریبنده عملکرد\n"
+        "مقایسه تجربی مدل سالم با مدل آلوده به ستون‌های پس از ارسال و سنجش افت در محیط عملیاتی."
     ))
 
     # Cell 10: Section 4 Code
@@ -186,14 +187,12 @@ def create_exploration_notebook():
 
     # Cell 12: Conclusion Markdown
     cells.append(nbf.v4.new_markdown_cell(
-        "## 5. Summary & Hand-off to Production System\n"
-        "<div dir='rtl'>جمع‌بندی یافته‌های اکتشافی و انتقال مدل آموزش‌دیده به نوت‌بوک سیستم عملیاتی</div>\n"
-        "\n"
-        "Exploration and audit establish that:\n"
-        "1. **Decision Moment T0** is strictly bound to `order_approved_at`.\n"
-        "2. **Data Leakage** creates a deceptive +24.3% surge in Capture Rate @ 10% that would catastrophically fail in live deployment.\n"
-        "3. **External API**: BrasilAPI statutory calendar provides 100% leak-free predictive lift, while weather and inflation APIs are rejected.\n"
-        "4. **Next**: Proceed to `02_system.ipynb` for the production training, MLflow tracking, and capacity-constrained decision engine."
+        "## ۵. جمع‌بندی فاز اکتشاف\n"
+        "یافته‌های اصلی فاز اکتشاف:\n"
+        "۱. مرز تصمیم‌گیری در لحظه $T_0$ منطبق بر `order_approved_at` مهار نشت داده را تضمین کرده و AUC واقعی ۰.۶۹۷۴ است.\n"
+        "۲. نشت داده منجر به جهش فریبنده +۲۴.۳٪ در نرخ شکار می‌شود که در محیط زنده تولید به سقوط مدل می‌انجامد.\n"
+        "۳. تقویم رسمی تعطیلات BrasilAPI به عنوان منبع بیرونی معتبر انتخاب شد؛ منابع آب‌وهوا و تورم به دلیل نشت و عدم کارایی رد شدند.\n"
+        "۴. خط لوله تولیدی و ردیابی آزمایش‌ها در نوت‌بوک `02_system.ipynb` پیاده‌سازی شده است."
     ))
 
     nb.cells = cells
@@ -202,6 +201,6 @@ def create_exploration_notebook():
         nbf.write(nb, f)
     print(f"Generated {out_path} with {len(cells)} cells.")
 
+
 if __name__ == "__main__":
     create_exploration_notebook()
-
