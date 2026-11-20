@@ -1,171 +1,185 @@
-# Architecture Decision Records (ADR)
-## Early Warning Decision Engine for Customer Negative Reviews
+# اسناد ثبت تصمیم‌های معماری (Architecture Decision Records - ADR)
+## ثبت تصمیم‌های فنی و معماری سیستم هشدار زودهنگام سفارش‌های پرخطر (Olist)
 **دانشجو:** شایان گنجی  
 **آزمایشگاه:** فناوری های مالی داتین- ترم سوم  
 **پایگاه‌داده هدف:** PostgreSQL 16.4 | دیتابیس `olist_db`  
+**مستندات و لینک‌ها:** [گزارش جامع معماری (report.fa.md)](report.fa.md) | [خلاصه مدیریتی (executive_summary.fa.md)](executive_summary.fa.md) | [نوت‌بوک اکتشافی (01_exploration.ipynb)](01_exploration.ipynb) | [نوت‌بوک پیاده‌سازی سیستم (02_system.ipynb)](02_system.ipynb)
 
 ---
 
-### ADR-001: Strict Decision Boundary Moment $T_0$ Definition at `order_approved_at`
+### تصمیم ۱ (ADR-001): تعیین مرز قطعی زمانی ($T_0$) در لحظه تایید پرداخت (`order_approved_at`)
 
-- **Status:** Accepted
-- **Context:**
-  The platform needs an early warning system to intercept orders likely to receive negative customer reviews (scores 1 or 2). In the order lifecycle, there are multiple timestamps: `order_purchase_timestamp`, `order_approved_at`, `order_delivered_carrier_date`, and `order_delivered_customer_date`. If $T_0$ is placed too late (e.g., carrier pickup), intervention options are severely constrained. If placed at purchase time before payment approval, orders that are ultimately rejected or canceled clog the priority follow-up pipeline.
-- **Decision:**
-  Formally define decision moment $T_0$ as the exact timestamp of order payment approval:
-  $$T_0 \equiv \text{Timestamp}(\text{order\_approved})$$
-  All features consumed by the model must be strictly available at or before this timestamp (`order_approved_at`).
-- **Consequences:**
-  - *Positive:* Legitimate operational intervention point. Merchant has not yet shipped the parcel, allowing platform support to contact sellers for expedited handling, prioritize carrier pickup, or proactively manage customer expectations.
-  - *Negative:* Precludes using transit and carrier performance signals for the current order, capping raw offline ROC-AUC compared to naive leaky models.
-- **Alternatives Considered:**
-  - *Purchase Timestamp ($T_{\text{purchase}}$):* Rejected because boleto payments take 24–48 hours to settle. Contacting customers before payment clears wastes operations budget on abandoned checkouts.
-  - *Carrier Dispatch Timestamp ($T_{\text{carrier}}$):* Rejected because the package has already left seller possession; operations cannot influence merchant packaging or carrier dispatch priority.
-
----
-
-### ADR-002: External Data Selection (BrasilAPI Statutory Holidays) & Rejection of Weather/Inflation APIs
-
-- **Status:** Accepted
-- **Context:**
-  The specification mandates evaluating at least two external live API sources, selecting one, proving zero temporal leakage, and documenting rejection rationales for the others.
-- **Decision:**
-  Select **BrasilAPI Brazilian Statutory Holidays** (`https://brasilapi.com.br/api/feriados/v1`) as the primary external data source. Reject **Open-Meteo Historical Weather**, **Banco Central do Brasil (BCB) IPCA Inflation**, and **ViaCEP Geolocation**.
-- **Consequences:**
-  - *Positive:*
-    1. *Zero Temporal Leakage:* Statutory public holidays in Brazil are enacted by federal decrees (Lei Federal nº 662/1949 and nº 10.607/2002) months or years in advance. At moment $T_0$, the holiday schedule is 100% deterministic.
-    2. *Direct Behavioral Mechanism:* Postal hubs (Correios) accumulate severe parcel backlogs during statutory holidays and Black Friday week. Customer delivery expectations are heightened prior to holidays.
-    3. *Zero Runtime Fragility:* Holidays are cached locally to `data/external/holidays_br.json` for 100% offline reproducibility.
-  - *Negative:* Holiday signals operate at a temporal granularity (days to next holiday) and do not capture localized route disruption.
-- **Alternatives Evaluated & Rejection Rationale:**
-  - *Open-Meteo Historical Weather Archive:* Evaluated and benchmarked. Rejected for two architectural reasons:
-    1. *Spatial Aggregation Error:* Olist orders span 27 Brazilian states. Querying weather at $T_0$ for customer and seller municipalities requires querying dozens of weather stations per order, introducing high network overhead.
-    2. *Temporal Lookahead Leakage:* Rain at moment $T_0$ does not affect delivery that occurs 12 days later. Querying weather during transit requires knowing the future shipping dates, which constitutes severe post-$T_0$ leakage.
-  - *Banco Central do Brasil (BCB) IPCA Inflation API:* Evaluated and rejected. Macroeconomic inflation operates on monthly indices published with a 15–40 day reporting lag. It provides zero order-level discriminative power.
-  - *ViaCEP Address API:* Evaluated and rejected. Redundant with the internal `olist.geolocation` table.
+* **وضعیت:** پذیرفته‌شده (Accepted)
+* **زمینه و صورت مسئله:**  
+  تیم عملیات با محدودیت جدی نیروی انسانی برای تماس‌های پیگیری مواجه است و به سازوکاری دقیق برای پیش‌بینی و مداخله در سفارش‌هایی نیاز دارد که در معرض ثبت امتیاز منفی (امتیاز ۱ یا ۲) قرار دارند. در چرخه حیات سفارش چند رخداد زمانی ثبت می‌شوند: کلیک خرید، تایید پرداخت، تحویل به پست، و تحویل به مشتری. اگر نقطه مداخله دیر انتخاب شود (مثلاً پس از تحویل به باربری)، کالا از دسترس فروشنده و انبار خارج شده و امکان پیگیری بسته‌بندی یا تعویض شرکت حمل‌ونقل از بین می‌رود. اگر پیش از تایید پرداخت انتخاب شود، سفارش‌هایی که به دلیل عدم پرداخت بولو (Boleto) یا ناموفق بودن تراکنش بانکی لغو می‌شوند، سهمیه تماس تیم عملیات را تلف می‌کنند.
+* **گزینه‌های بررسی‌شده:**
+  1. *لحظه کلیک خرید (`order_purchase_timestamp`):* رد شد؛ زیرا در شبکه بانکی برزیل پرداخت‌های بولو ۲۴ تا ۴۸ ساعت معطل تسویه می‌مانند و تخصیص سهمیه پیگیری پیش از اطمینان از واریز وجه، اتلاف مستقیم بودجه عملیات است.
+  2. *لحظه تایید پرداخت (`order_approved_at`):* تایید شد؛ نقطه بهینه عملیاتی است که کالا هنوز در انبار فروشنده است و امکان تسریع در ارسال، تغییر شیوه ارسال یا پیگیری بسته‌بندی وجود دارد.
+  3. *لحظه تحویل به پست (`order_delivered_carrier_date`):* رد شد؛ زیرا مرسوله فیزیکاً وارد شبکه ملی پست (Correios) شده و تیم پشتیبانی پلتفرم کنترلی بر تاخیرات بین‌راهی آن ندارد.
+* **تصمیم نهایی:**  
+  مرز اکید زمانی در لحظه تایید پرداخت ($T_0$ منطبق بر مقدار فیلد `order_approved_at`) تعیین شد. تمام ویژگی‌های ورودی به مدل الزاماً باید در این لحظه یا پیش از آن متولد شده باشند.
+* **عوارض و مصالحه‌های پذیرفته‌شده:**  
+  تثبیت یک پنجره معتبر و عملی برای مداخله پیشگیرانه تیم پشتیبانی، در ازای چشم‌پوشی از متغیرهای وسوسه‌کننده مسیر ترانزیت و سقف خوردن شاخص‌های آماری نسبت به مدل‌های آلوده به نشت داده.
+* **ارجاع به نوت‌بوک و اثبات پیاده‌سازی:**  
+  نوت‌بوک [01_exploration.ipynb](01_exploration.ipynb)، بخش ۱ (تحلیل مسئله و توزیع نظرات خریداران)، سلول کد `In [2]` (تفکیک رخدادهای زمانی چرخه حیات سفارش و شناسایی مرز تایید پرداخت روی ۹۹,۴۴۱ رکورد).
 
 ---
 
-### ADR-003: In-Database Feature Engineering via Indexed Materialized View in PostgreSQL
+### تصمیم ۲ (ADR-002): انتخاب تقویم مصوب تعطیلات رسمی برزیل (BrasilAPI) و رد داده‌های هواشناسی و تورم
 
-- **Status:** Accepted
-- **Context:**
-  The platform requires feature generation inside PostgreSQL (`olist_db`) via Views or Procedures with a strict service level agreement: query latency $< 500\text{ ms}$ with execution plans documented.
-- **Decision:**
-  Implement a dual-database architecture:
-  1. Dynamic View `olist.view_order_early_warning_features` for live online single-order inference.
-  2. Materialized View `olist.mv_order_early_warning_features` indexed with unique B-Tree on `order_id` and secondary B-Trees on `order_approved_at` and `customer_state` for bulk model training and monthly cohort backtesting.
-- **Consequences:**
-  - *Positive:*
-    - Point lookup for online scoring executes in **0.273 ms** (over 1,800x faster than the 500 ms SLA).
-    - Monthly cohort backtest query executes in **2.730 ms**.
-    - Full dataset scan across all 99,441 orders executes in **8.750 ms**.
-    - Pushes aggregations (`SUM(payment_value)`, `COUNT(order_item_id)`, freight ratios) down to the PostgreSQL execution engine.
-  - *Negative:* Materialized views require scheduled refresh (`REFRESH MATERIALIZED VIEW`) when new historical data is ingested.
-
----
-
-### ADR-004: Defense-in-Depth Zero-Leakage Architecture (Schema Whitelist & Regex Pattern Guards)
-
-- **Status:** Accepted
-- **Context:**
-  Data leakage is the most prevalent failure mode in machine learning systems. Naive practitioners frequently include columns like `order_delivered_customer_date` or calculate transit delays, which yields deceptively high offline metrics that collapse completely in live production.
-- **Decision:**
-  Implement a multi-layered defense-in-depth anti-leakage architecture:
-  1. *Schema Audit Registry (`temporal_audit.py`):* Explicit mapping of all 45 schema attributes across all 8 tables into lifecycle statuses (`ALLOWED_AT_T0`, `FORBIDDEN_POST_T0`, `TARGET_ONLY`, `METADATA_IDENTIFIER`).
-  2. *Runtime Regex Guard (`verify_zero_leakage`):* Automatically scans incoming DataFrames using regex patterns (`deliver.*date`, `actual.*deliver`, `carrier.*date`, `delay.*day`, `is.*delay`, `review.*`). Raises `TemporalLeakageError` immediately upon detecting forbidden patterns.
-  3. *Unit Test Enforcement (`test_temporal_leakage_guard.py`):* Automated CI test verifying that injecting post-$T_0$ features fails immediately.
-- **Consequences:**
-  - *Positive:* Impossible for pipeline authors or downstream inference callers to inadvertently contaminate feature spaces.
-  - *Negative:* Requires explicit registration for any newly engineered features.
+* **وضعیت:** پذیرفته‌شده (Accepted)
+* **زمینه و صورت مسئله:**  
+  برای ارتقای قدرت تفکیک مدل فراتر از داده‌های داخلی پایگاه‌داده، کاوش منابع بیرونی زنده در دستور کار قرار گرفت تا فاکتورهای محیطی موثر بر تاخیر لجستیک کشف شوند، مشروط بر آنکه در لحظه $T_0$ با قطعیت در دسترس بوده و نشت زمانی ایجاد نکنند.
+* **گزینه‌های بررسی‌شده:**
+  1. *شاخص تورم ماهانه بانک مرکزی برزیل (BCB IPCA):* رد شد؛ آمار رسمی تورم با تاخیر ۱۰ تا ۴۰ روزه منتشر می‌شود. استفاده از عدد تورم ماه جاری برای سفارشی که در اوایل همان ماه ثبت شده، نشت زمانی مستقیم از آینده است چون در روز خرید هنوز عددی منتشر نشده است. علاوه بر این، تورم یک متغیر کلان تدریجی است و قدرت تفکیک روزانه بین سفارش‌ها را ندارد.
+  2. *داده‌های تاریخی شرایط جوی (Open-Meteo API):* رد شد؛ مرسوله‌ها بین ۱۰ تا ۲۵ روز بعد به دست مشتری می‌رسند در حالی که پیش‌بینی هوا حداکثر ۳ تا ۵ روز اعتبار دارد؛ بارندگی در روز خرید هیچ همبستگی معناداری با طوفان در روز تحویل دو هفته بعد ندارد. همچنین در بیش از ۴,۱۰۰ شهر برزیل ایستگاه‌های معتبر جوی ناقص بودند و افزودن آن به مدل هیچ بهبودی در نرخ شکار ایجاد نکرد (ضریب اثربخشی ۱.۰).
+  3. *تقویم تعطیلات رسمی مصوب برزیل (BrasilAPI):* تایید شد؛ تعطیلات ملی برزیل بر اساس قانون فدرال ماه‌ها قبل تصویب شده و در لحظه $T_0$ کاملاً قطعی و بدون نشت است. از نظر علّی، تعطیلات رسمی باعث تعطیلی هاب‌های تفکیک پست (Correios) و انباشت شدید بسته‌ها و تاخیر مستقیم می‌شود (افزایش نرخ نارضایتی از ۱۴.۱٪ به ۱۸.۴٪).
+* **تصمیم نهایی:**  
+  انتخاب تقویم تعطیلات رسمی BrasilAPI و کش آفلاین آن در `data/external/holidays_br.json` برای قطع وابستگی به اینترنت، و رد مستند داده‌های تورم و هواشناسی.
+* **عوارض و مصالحه‌های پذیرفته‌شده:**  
+  این سیگنال نوسانات موضعی روزانه جاده‌ها را پوشش نمی‌دهد، اما اتکاپذیری ۱۰۰٪ دارد و کاملاً مصون از نشت زمانی است.
+* **ارجاع به نوت‌بوک و اثبات پیاده‌سازی:**  
+  نوت‌بوک [01_exploration.ipynb](01_exploration.ipynb)، بخش ۳ (ارزیابی منابع بیرونی داده و ابطال فرضیه‌ها)، سلول کد `In [4]` (کلاینت `BrasilAPIHolidayClient` و استخراج ۳ ویژگی تقویمی پاک در برابر آزمون ناموفق جوی Open-Meteo).
 
 ---
 
-### ADR-005: Capacity-Constrained Evaluation Metric (Capture Rate @ 10%) over Global ROC-AUC
+### تصمیم ۳ (ADR-003): تولید ویژگی‌ها درون پایگاه‌داده با Materialized View ایندکس‌شده در PostgreSQL
 
-- **Status:** Accepted
-- **Context:**
-  In real-world customer operations, budget is strictly constrained. The Olist customer operations team has capacity to contact at most 10% of confirmed orders for proactive follow-up. Standard ML metrics like global ROC-AUC, accuracy, or Macro-F1 evaluate the entire probability distribution, treating false positives at the 90th percentile identically to false positives at the 20th percentile.
-- **Decision:**
-  Adopt **Capture Rate at 10% Capacity** ($\text{Recall}_{\text{top 10\%}}$) as the primary optimization and governance metric, supplemented by secondary evaluations at 5% and 20% alternative quotas:
-  $$\text{Capture Rate @ } K\% = \frac{\sum_{i \in \text{Top } K\%} y_i}{\sum_{\text{all } i} y_i}, \quad \text{Precision @ } K\% = \frac{\sum_{i \in \text{Top } K\%} y_i}{\lfloor N \times K\% \rfloor}, \quad \text{Lift} = \frac{\text{Precision @ } K\%}{\text{Base Rate}}$$
-- **Consequences:**
-  - *Positive:* Perfect alignment between model mathematical objective and business operational constraints. Guarantees the operations team maximizes negative review interception within their fixed 10% follow-up budget.
-  - *Negative:* Metric is non-differentiable; model training still requires continuous surrogate losses (binary log-loss) with probability ranking.
-
----
-
-### ADR-006: Temporal Cutoff Split (`2018-03-01`) vs. Random K-Fold Cross-Validation
-
-- **Status:** Accepted
-- **Context:**
-  E-commerce and financial data exhibit strong temporal dependencies, macroeconomic inflation, logistics strikes (e.g., Brazilian postal strike in March 2018), and platform maturation.
-- **Decision:**
-  Enforce a strict temporal cutoff date of **`2018-03-01`**:
-  - *Train Cohort:* September 2016 through February 2018 (58,759 orders).
-  - *Test Cohort:* March 2018 through August 2018 (39,759 orders).
-  - *Final Month Evaluation:* August 2018 evaluated standalone as required by specification.
-- **Consequences:**
-  - *Positive:* Simulates realistic forward-looking production deployment. Uncovers temporal concept drift and postal strike disruptions.
-  - *Negative:* Results in lower apparent metrics than random k-fold cross-validation due to distribution shift.
-- **Alternatives Considered:**
-  - *Random 80/20 Train-Test Split:* Strictly rejected. Randomly shuffling orders leaks future macro patterns into past predictions, violating physical causality.
+* **وضعیت:** پذیرفته‌شده (Accepted)
+* **زمینه و صورت مسئله:**  
+  استخراج ویژگی‌های سبد، مشتری و فروشنده نیازمند ترکیب ۸ جدول پایگاه‌داده اولیست است. اجرای داینامیک کوئری روی کل داده‌ها بیش از ۱,۲۴۰ میلی‌ثانیه و برای تک‌سفارش حدود ۶۵ میلی‌ثانیه زمان می‌برد که برای پاسخگویی در مقیاس عملیاتی کند بود و باید به زیر ۳ میلی‌ثانیه می‌رسید.
+* **گزینه‌های بررسی‌شده:**
+  1. *محاسبه ویژگی‌ها در حافظه پایتون با Pandas:* رد شد؛ مصرف حافظه بالا و گلوگاه پردازش تک‌رشته‌ای در صف‌های همزمان.
+  2. *ویوی داینامیک در دیتابیس (`CREATE VIEW`):* رد شد؛ در هر استعلام تمام جوین‌ها از نو اجرا شده و زمان تاخیر بالای ۱ ثانیه باقی می‌ماند.
+  3. *ویوی مادی ایندکس‌شده (`CREATE MATERIALIZED VIEW`):* تایید شد؛ محاسبات تجمیعی یک‌بار پیش‌محاسبه شده و ایندکس‌های ترکیبی B-Tree روی `(order_id, order_approved_at)` ساخته شدند.
+* **تصمیم نهایی:**  
+  ساخت `olist.mv_order_early_warning_features` همراه با ایندکس‌های ترکیبی. زمان پاسخگویی برای استعلام یک سفارش به **۰.۲۴۴ میلی‌ثانیه** (۲۶۰ برابر سریع‌تر از کوئری اولیه) و برای واکشی کل ۶,۵۲۳ سفارش یک ماه به **۲.۷۲۷ میلی‌ثانیه** کاهش یافت.
+* **عوارض و مصالحه‌های پذیرفته‌شده:**  
+  اشغال حدود ۴۵ مگابایت فضای دیسک اضافی در PostgreSQL و نیاز به اجرای دستور `REFRESH MATERIALIZED VIEW` هنگام بارگذاری دسته‌ای داده‌های جدید.
+* **ارجاع به نوت‌بوک و اثبات پیاده‌سازی:**  
+  نوت‌بوک [02_system.ipynb](02_system.ipynb)، بخش ۱ (استخراج ویژگی‌ها از پایگاه‌داده)، سلول کد `In [2]` و فایل مستند پلن‌های اجرایی [sql/views/feature_query_plan.txt](file:///d:/Lab/term%203/stage-4-shayan-ganji/sql/views/feature_query_plan.txt).
 
 ---
 
-### ADR-007: MLflow for Lineage, Reproducibility, and Time-Series Multi-Cohort Backtesting
+### تصمیم ۴ (ADR-004): معماری دفاع در عمق ضد نشت زمانی (گارد نظارتی اسکیما و فیلتر الگوهای ممنوعه)
 
-- **Status:** Accepted
-- **Context:**
-  Reproducibility and auditability are foundational requirements. Furthermore, evaluating time-series stability across monthly market regimes mirrors financial backtesting (tracking Drawdown and Sharpe equivalents across periods).
-- **Decision:**
-  Integrate **MLflow** with a local SQLite database backend (`sqlite:///mlruns.db`):
-  - Track run parameters: Cutoff date, feature count, model family, class weighting, hyperparameters.
-  - Track metrics: Capture Rate @ 5%, 10%, 20%, Precision @ 10%, PR-AUC, ROC-AUC, Brier score, August 2018 metrics.
-  - Nested Child Runs: Log each monthly cohort (2018-03 through 2018-08) as an individual child run to track stability across logistics shocks.
-  - Artifact Logging: Confusion matrices at 10% capacity, ROC/PR curves, feature importance plots, serialized model binaries.
-- **Consequences:**
-  - *Positive:* 100% offline reproducibility, complete audit lineage, zero external server dependencies.
-  - *Negative:* Adds MLflow dependency to environment contracts.
-
----
-
-### ADR-008: Quarantine Policy for 768 Unreviewed Orders vs. Groundless Optimistic/Pessimistic Imputation
-
-- **Status:** Accepted
-- **Context:**
-  Out of 99,441 orders in Olist, 768 orders (0.77%) have no corresponding review record in `olist.order_reviews`. Naive workflows either impute them as positive reviews (score 5, assuming "no news is good news") or negative reviews (score 1, assuming "unhappy customers refused to respond").
-- **Decision:**
-  Quarantine unreviewed orders from supervised model training and evaluation. For inference on unreviewed live orders, the system scores them normally using catalog and payment features.
-- **Consequences:**
-  - *Positive:* Avoids label noise and ungrounded behavioral assumptions. Preserves empirical integrity.
-  - *Negative:* Drops 0.77% of rows from training set (58,759 clean training orders retained).
+* **وضعیت:** پذیرفته‌شده (Accepted)
+* **زمینه و صورت مسئله:**  
+  ورود تصادفی حتی یک متغیر پس از ارسال کالا (مانند وضعیت تحویل نهایی یا زمان رسیدن بار) مدل را با دقت‌های متوهم بالای ۹۸ درصد آموزش می‌دهد اما در محیط واقعی، فیلدهای خالی باعث سقوط دقت به صفر می‌شوند. در یک تیم فنی در حال توسعه، احتمال اضافه شدن سهوی این ستون‌ها بسیار بالا است.
+* **گزینه‌های بررسی‌شده:**
+  1. *اعتماد صرف به بازبینی دستی کد:* رد شد؛ احتمال بالای خطای انسانی با تغییر نام یا اضافه شدن ستون‌ها در طول زمان.
+  2. *لیست سفید ساده در سطح کد پایتون:* به تنهایی شکننده است و در لایه‌های مختلف خط لوله اعمال نمی‌شود.
+  3. *دفاع در عمق چندلایه:* تایید شد؛ تدوین ممیزی رسمی ۴۵ ستون پایگاه‌داده، تعریف لیست سفید ۲۱ متغیر مجاز در $T_0$، بازرسی خودکار الگوهای رجکس برای متغیرهای پس از ارسال (`delay`, `transit`, `carrier`, `actual`)، و پرتاب خطای اختصاصی `TemporalLeakageError` در صورت تخطی.
+* **تصمیم نهایی:**  
+  پیاده‌سازی ماژول `early_warning.features.temporal_audit` همراه با تست‌های خودکار که هرگونه تزریق ستون غیرمجاز را بلافاصله شناسایی و متوقف می‌کند.
+* **عوارض و مصالحه‌های پذیرفته‌شده:**  
+  سربار چند میلی‌ثانیه‌ای در مرحله اعتبارسنجی اسکیما و الزام به ثبت مستند هر ویژگی جدید در رجیستری ممیزی پیش از ورود به خط تولید.
+* **ارجاع به نوت‌بوک و اثبات پیاده‌سازی:**  
+  نوت‌بوک [01_exploration.ipynb](01_exploration.ipynb)، بخش ۲ (ممیزی زمانی ۴۵ ستون)، سلول کد `In [3]` و نوت‌بوک [02_system.ipynb](02_system.ipynb)، بخش ۱، سلول کد `In [2]` (اعمال خودکار کلاس `TemporalLeakageGuard` روی داده‌های استخراجی).
 
 ---
 
-### ADR-009: Dual-Tier Model Hierarchy (Interpretable Regularized Logistic Baseline + Tuned LightGBM)
+### تصمیم ۵ (ADR-005): تمرکز بر متریک‌های مقید به ظرفیت (نرخ شکار در سهمیه ۱۰٪) به جای بهینه‌سازی سراسری ROC-AUC
 
-- **Status:** Accepted
-- **Context:**
-  A production ML system requires an interpretable baseline to validate that complex models extract non-linear patterns rather than overfitting.
-- **Decision:**
-  Implement a dual-tier model hierarchy:
-  1. *Tier 1 Baseline:* Standardized L2-Regularized Logistic Regression with balanced class weights. Outputs feature odds ratios.
-  2. *Tier 2 Production:* Tuned Gradient Boosted Trees (LightGBM) with balanced class weights, handling feature interactions (e.g., interstate delivery $\times$ heavy freight).
-- **Consequences:**
-  - *Positive:* Proves LightGBM delivers genuine operational lift (+0.80% capture rate, +1.08% precision at 10% capacity, +0.017 PR-AUC) over linear models.
-  - *Negative:* Managing two model training pathways in the codebase.
+* **وضعیت:** پذیرفته‌شده (Accepted)
+* **زمینه و صورت مسئله:**  
+  تیم پشتیبانی پلتفرم توان تماس حداکثر با ۱۰ درصد از سفارش‌های روزانه را دارد. شاخص‌های متداول یادگیری ماشین نظیر Accuracy، F1-Score عمومی یا ROC-AUC سراسری، کل دامنه احتمال را یکسان وزن می‌دهند و تفاوت تفکیک در صدک بالای صف را در میان انبوه داده‌های عادی گم می‌کنند.
+* **گزینه‌های بررسی‌شده:**
+  1. *معیار دقت کلی (Overall Accuracy):* رد شد؛ در داده‌های نامتوازن با نرخ منفی ۱۴٪، پیش‌بینی صفر برای تمام داده‌ها به دقت ۸۶٪ می‌رسد در حالی که حتی یک مشتری ناراضی هم شناسایی نمی‌شود.
+  2. *آستانه پیش‌فرض آماری ۰.۵:* رد شد؛ تعداد سفارش‌های بالای ۰.۵ وابسته به کالیبراسیون و نرخ پایه هر ماه است و ظرفیت ثابت تیم تماس را بر هم می‌زند.
+  3. *نرخ شکار در ظرفیت ۱۰٪ (Capture Rate @ Top 10% Quota):* تایید شد؛ سفارش‌ها بر اساس احتمال ریسک مرتب شده و دقیقاً ۱۰٪ سفارش‌های پرخطر انتخاب می‌شوند.
+* **تصمیم نهایی:**  
+  ملاک پذیرش و بهینه‌سازی مدل بر مبنای «نرخ شکار در سهمیه ۱۰٪»، «دقت تماس‌ها» و «ضریب اثربخشی نسبت به انتخاب تصادفی (Lift)» قرار گرفت.
+* **عوارض و مصالحه‌های پذیرفته‌شده:**  
+  مدل برای ۹۰ درصد پایینی صف اقدام عملیاتی پیشنهاد نمی‌کند و رفتار توزیع احتمال در بخش‌های کم‌خطر برای سیستم فاقد اهمیت عملیاتی است.
+* **ارجاع به نوت‌بوک و اثبات پیاده‌سازی:**  
+  نوت‌بوک [02_system.ipynb](02_system.ipynb)، بخش ۴ (ارزیابی سبد ظرفیت عملیاتی ۵٪، ۱۰٪ و ۲۰٪)، سلول کد `In [5]` (محاسبه نرخ شکار ۲۱.۲۰٪ و دقت ۲۸.۷۷٪ با رسم منحنی سودمندی).
 
 ---
 
-### ADR-010: Offline Fallback and Deterministic Caching for Zero Runtime External Dependency
+### تصمیم ۶ (ADR-006): تقسیم زمانی داده‌ها در ۱ مارس ۲۰۱۸ به جای اعتبارسنجی متقاطع تصادفی
 
-- **Status:** Accepted
-- **Context:**
-  Live external HTTP APIs can experience network timeouts, rate limiting, or DNS failure during CI/CD test runs or air-gapped production deployments.
-- **Decision:**
-  Implement deterministic local disk caching in `data/external/holidays_br.json`. If network requests fail, the client loads from local cache; if cache is missing, hardcoded statutory federal holidays serve as an immutable fallback.
-- **Consequences:**
-  - *Positive:* 100% offline unit tests, 0 ms network latency during testing, guaranteed zero build failures.
-  - *Negative:* Requires local storage (~5 KB) for cached holiday payloads.
+* **وضعیت:** پذیرفته‌شده (Accepted)
+* **زمینه و صورت مسئله:**  
+  در داده‌های سری زمانی تجارت الکترونیک، تقسیم تصادفی رکوردها (K-Fold یا Random Split) اطلاعات آینده را به گذشته نشت می‌دهد و شرایط واقعی استقرار مداوم را به درستی شبیه‌سازی نمی‌کند.
+* **گزینه‌های بررسی‌شده:**
+  1. *اعتبارسنجی متقاطع ۵ برابری تصادفی (5-Fold CV):* رد شد؛ الگوهای فصلی و رفتاری آینده به داده‌های آموزش نفوذ کرده و ارزیابی غیرواقعی به دست می‌دهد.
+  2. *برش قطعی زمانی (Temporal Split):* تایید شد؛ تعیین مرز ۱ مارس ۲۰۱۸؛ به این ترتیب تمام سفارش‌های قبل از آن برای آموزش (۵۸,۷۵۹ سفارش) و ۶ ماه آینده (مارس تا آگوست ۲۰۱۸، شامل ۳۹,۷۵۹ سفارش) برای ارزیابی شبیه‌سازی استقرار استفاده شدند.
+* **تصمیم نهایی:**  
+  پیاده‌سازی تقسیم زمانی قطعی در ماژول `ModelTrainer` با مرز تاریخی ۱ مارس ۲۰۱۸.
+* **عوارض و مصالحه‌های پذیرفته‌شده:**  
+  کاهش ظاهری شاخص‌ها نسبت به تقسیم تصادفی به دلیل تغییرات فصلی و روندها در سال ۲۰۱۸، اما نمایش کاملاً شفاف و صادقانه از رفتار واقعی مدل در محیط زنده.
+* **ارجاع به نوت‌بوک و اثبات پیاده‌سازی:**  
+  نوت‌بوک [02_system.ipynb](02_system.ipynb)، بخش ۲ (آموزش مدل‌ها و مقایسه با خطوط مبنا)، سلول کد `In [3]` (جداسازی ساخت‌یافته داده‌های قبل و بعد از مارس ۲۰۱۸ با `load_and_split_data`).
 
+---
+
+### تصمیم ۷ (ADR-007): ردیابی محلی آزمایش‌ها و کوهورت‌های زمانی با پایگاه‌داده محلی MLflow
+
+* **وضعیت:** پذیرفته‌شده (Accepted)
+* **زمینه و صورت مسئله:**  
+  ارزیابی عملکرد مدل در طول ۶ ماه متوالی نیازمند ثبت ساختاریافته آزمایش‌ها، مقایسه نسخه‌ها، و ردیابی شاخص‌های تفکیک‌شده به ازای هر ماه آزمون است. ثبت سنتی در فایل‌های لاگ متنی امکان تحلیل روند و پایش یکپارچه پارامترها و خروجی‌ها را فراهم نمی‌کرد.
+* **گزینه‌های بررسی‌شده:**
+  1. *لاگ دستی خروجی‌ها در فایل JSON یا متن:* رد شد؛ ساختار غیرمنسجم، نبود رابط مقایسه‌ای و احتمال خطای کدنویسی در ثبت.
+  2. *سرور ابری یا ریموت MLflow:* رد شد؛ ایجاد وابستگی به دسترسی اینترنت و اختلال در اجرای مستقل آفلاین.
+  3. *استقرار محلی MLflow با دیتابیس SQLite محلی (`mlruns.db`):* تایید شد؛ ساختار والد-فرزند برای ثبت اجرای اصلی آموزش و ثبت تک‌تک ۶ ماه آزمون به عنوان ران‌های زیرمجموعه.
+* **تصمیم نهایی:**  
+  پیکربندی محلی MLflow بر روی `sqlite:///mlruns.db` با ثبت ۵۴ ران تحلیلی، شامل ماتریس‌های ظرفیت و کوهورت‌های ماهانه.
+* **عوارض و مصالحه‌های پذیرفته‌شده:**  
+  افزوده شدن حجم فایل `mlruns.db` (حدود ۱.۳ مگابایت) به ریپازیتوری و وابستگی به پکیج پایتون `mlflow`.
+* **ارجاع به نوت‌بوک و اثبات پیاده‌سازی:**  
+  نوت‌بوک [02_system.ipynb](02_system.ipynb)، بخش ۳ (بازرسی ردیابی آزمایش‌ها در MLflow)، سلول کد `In [4]` (استعلام برنامه‌نویسی ۵۴ ران ثبت‌شده و نمایش ساختار سلسه‌مراتبی والد-فرزند).
+
+---
+
+### تصمیم ۸ (ADR-008): تفکیک ۷۶۸ سفارش فاقد نظر به پارتیشن قرنطینه به جای برچسب‌گذاری حدسی
+
+* **وضعیت:** پذیرفته‌شده (Accepted)
+* **زمینه و صورت مسئله:**  
+  در پایگاه‌داده اولیست، ۷۶۸ سفارش هیچ رکوردی در جدول نظرات (`olist.order_reviews`) ندارند. تعیین تکلیف این رکوردها برای حفظ یکپارچگی خط لوله آموزش بدون دستکاری حدسی برچسب‌ها ضروری بود.
+* **گزینه‌های بررسی‌شده:**
+  1. *برچسب‌گذاری صفر (فرض رضایت مشتری):* رد شد؛ سوگیری سیستماتیک و نادیده گرفتن مشتریانی که به دلیل نارضایتی سکوت کرده‌اند.
+  2. *برچسب‌گذاری یک (فرض نارضایتی):* رد شد؛ جریمه ناعادلانه فروشندگان بدون اینکه شکایتی ثبت شده باشد.
+  3. *حذف بی‌صدا بدون لاگ:* رد شد؛ نقض اصول شفافیت مهندسی داده.
+  4. *انتقال به پارتیشن قرنطینه (Quarantine):* تایید شد؛ حذف از مجموعه آموزش برای پیشگیری از نویز برچسب، و در عین حال الزام خط لوله تولید به محاسبه احتمال برای تمام سفارش‌ها در زمان استقرار.
+* **تصمیم نهایی:**  
+  جداسازی شفاف ۷۶۸ سفارش در پارتیشن قرنطینه در مرحله آموزش داده‌ها.
+* **عوارض و مصالحه‌های پذیرفته‌شده:**  
+  کاهش ناچیز ۰.۷۷ درصدی در حجم داده‌های آموزش که با توجه به جامعه آماری ۶۰ هزارتایی، هیچ اثری بر توان یادگیری مدل ندارد.
+* **ارجاع به نوت‌بوک و اثبات پیاده‌سازی:**  
+  نوت‌بوک [01_exploration.ipynb](01_exploration.ipynb)، بخش ۱، سلول کد `In [2]` (کشف ۷۶۸ سفارش بدون نظر در جدول نظرات) و نوت‌بوک [02_system.ipynb](02_system.ipynb)، بخش ۱، سلول کد `In [2]` (اعمال فیلتر قرنطینه و استخراج ۹۸,۵۱۸ سفارش برچسب‌دار جهت آموزش).
+
+---
+
+### تصمیم ۹ (ADR-009): معماری دومرحله‌ای مقایسه مدل‌ها (خط مبنای آماری خطی در برابر مدل نهایی LightGBM)
+
+* **وضعیت:** پذیرفته‌شده (Accepted)
+* **زمینه و صورت مسئله:**  
+  برای اطمینان از ارزش افزوده مدل‌های پیچیده در مقایسه با قواعد ساده و ارزیابی تفاوت الگوریتم‌ها، نیاز به یک چارچوب مقایسه‌ای استاندارد بین خانواده‌های مختلف مدل‌سازی وجود داشت.
+* **گزینه‌های بررسی‌شده:**
+  1. *اکتفا به یک مدل واحد گرادیان بوستینگ بدون مقایسه:* رد شد؛ فقدان بینش نسبت به سهم تعاملات غیرخطی در مقایسه با روابط خطی ساده.
+  2. *شبکه‌های عصبی عمیق:* رد شد؛ داده‌های جدولی اولیست با ۲۱ متغیر نیازی به شبکه‌های عمیق ندارند و هزینه پردازش و پیچیدگی غیرضروری تحمیل می‌کنند.
+  3. *سلسله‌مراتب مدل خطی استاندارد (Logistic Regression) در کنار گرادیان بوستینگ (LightGBM):* تایید شد؛ رگرسیون لوجستیک به عنوان مبنای آماری شفاف و LightGBM برای شکار تعاملات پیچیده بین متغیرها.
+* **تصمیم نهایی:**  
+  آموزش رگرسیون لوجستیک استانداردشده به عنوان مبنا و ارتقای آن به LightGBM به عنوان مدل تولیدی نهایی که نرخ شکار در سهمیه ۱۰٪ را از ۲۰.۴۰٪ به ۲۱.۲۰٪ و دقت را به ۲۸.۷۷٪ ارتقا داد.
+* **عوارض و مصالحه‌های پذیرفته‌شده:**  
+  تفسیرناپذیری مستقیم ضرایب درختی در مقایسه با ضرایب خطی، که با نمودار اهمیت ویژگی‌ها و منحنی‌های اثر متغیرها پوشش داده شد.
+* **ارجاع به نوت‌بوک و اثبات پیاده‌سازی:**  
+  نوت‌بوک [02_system.ipynb](02_system.ipynb)، بخش ۲ و ۴، سلول‌های کد `In [3]` و `In [5]` (مقایسه عینی نتایج آموزش و ماتریس ظرفیت رگرسیون لوجستیک و LightGBM در کنار قواعد سرانگشتی).
+
+---
+
+### تصمیم ۱۰ (ADR-010): معماری اجرایی مستقل آفلاین و تضمین بازتولید زیر ۴۵ ثانیه
+
+* **وضعیت:** پذیرفته‌شده (Accepted)
+* **زمینه و صورت مسئله:**  
+  خط لوله بازتولید پروژه باید بدون وابستگی به اینترنت، با پایداری کامل و در کوتاه‌ترین زمان ممکن، کل زنجیره ساخت پایگاه‌داده، آموزش، ارزیابی چنددوره‌ای MLflow و خروجی صف اولویت را اجرا کند تا در فرآیند استقرار خودکار و تست‌های مداوم معطلی ایجاد نشود.
+* **گزینه‌های بررسی‌شده:**
+  1. *فراخوانی برخط و زنده APIها در هر بار اجرای خط لوله:* رد شد؛ شکننده در برابر اختلالات شبکه اینترنت و محدودیت سهمیه فراخوانی (Rate Limiting).
+  2. *کش محلی قطعی، مدیریت ساخت‌یافته ویوهای پایگاه‌داده و اسکریپت تک‌فرمان ارکستراتور:* تایید شد.
+* **تصمیم نهایی:**  
+  کش آفلاین تقویم تعطیلات در `data/external/holidays_br.json`، مدیریت خودکار ویوهای پایگاه‌داده با اسکریپت پایتون و اجرای کل زنجیره توسط `scripts/run_all.py` و `run_pipeline.ps1` در زمان **۴۵.۲۹ ثانیه**.
+* **عوارض و مصالحه‌های پذیرفته‌شده:**  
+  نیاز به به‌روزرسانی فایل محلی کش در صورت تغییر قوانین تقویم رسمی کشور در سال‌های آینده.
+* **ارجاع به نوت‌بوک و اثبات پیاده‌سازی:**  
+  نوت‌بوک [02_system.ipynb](02_system.ipynb)، بخش ۷ و ۸، سلول‌های کد `In [8]` و `In [9]` (تولید خروجی صف ۶۵۳ سفارش اولویت‌دار در فایل `reports/priority_followup_orders.csv` و تایید نهایی اجرای مستقل زیرساخت).
