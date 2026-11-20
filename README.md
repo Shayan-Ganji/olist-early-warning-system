@@ -1,5 +1,5 @@
 # Early Warning Decision Engine (Olist Capstone)
-## سامانه تصمیم‌گیری و هشدار زودهنگام رضایت مشتریان در بستر اولیست
+## سیستم اولویت‌بندی سفارش‌های پرخطر و پیش‌بینی نظرات منفی در اولیست
 **دانشجو:** شایان گنجی  
 **آزمایشگاه:** فناوری های مالی داتین- ترم سوم  
 **پایگاه‌داده هدف:** PostgreSQL 16.4 | دیتابیس `olist_db`  
@@ -27,7 +27,7 @@ pip install -e .
 # ۲. اجرای کامل تست‌های خودکار آفلاین (۲۶ تست واحد و یکپارچه)
 python -m unittest discover tests -v
 
-# ۳. اجرای تک‌فرمان کل سامانه از صفر تا خروجی نهایی (زیر ۱ دقیقه)
+# ۳. اجرای تک‌فرمان کل خط لوله از صفر تا خروجی نهایی (زیر ۱ دقیقه)
 python scripts/run_all.py
 # یا در محیط ویندوز پاورشل:
 .\run_pipeline.ps1
@@ -46,7 +46,7 @@ early-warning predict --input reports/priority_followup_orders.csv --capacity 0.
 ```text
 stage-4-shayan-ganji/
 ├── 01_exploration.ipynb        # نوت‌بوک اکتشاف، ممیزی زمانی ۴۵ ستون و بنچ‌مارک نشت
-├── 02_system.ipynb             # نوت‌بوک سامانه نهایی، اجرای خط لوله و ارزیابی ظرفیت
+├── 02_system.ipynb             # نوت‌بوک پیاده‌سازی سیستم، اجرای خط لوله و ارزیابی ظرفیت
 ├── report.fa.md                # گزارش جامع فنی و تصمیم‌های مهندسی (فارسی)
 ├── report.md                   # گزارش فنی معماری سیستم (انگلیسی)
 ├── decisions.md                # ۱۰ سند ثبت تصمیم معماری (ADR)
@@ -63,13 +63,13 @@ stage-4-shayan-ganji/
 │   ├── figures/                # نمودارهای تحلیلی و منحنی‌های ظرفیت
 │   └── priority_followup_orders.csv # صف ۱۰ درصد سفارش‌های پرخطر جهت پیگیری
 ├── scripts/
-│   ├── run_all.py              # ارکستراتور اجرای کامل سامانه (اجرا در کمتر از ۴۵ ثانیه)
+│   ├── run_all.py              # اجرای کامل خط لوله و تولید خروجی‌ها (در کمتر از ۴۵ ثانیه)
 │   ├── deploy_views.py         # مستقرکننده ویوها در PostgreSQL و ارزیابی زمان کوئری
 │   ├── build_exploration_notebook.py
 │   └── build_system_notebook.py
 ├── sql/views/
 │   ├── 01_create_feature_views.sql # ویوهای پویا و ماتریالایزد با ایندکس‌های B-Tree
 │   └── feature_query_plan.txt      # پلن‌های اجرایی تاییدکننده زمان زیر ۳ میلی‌ثانیه
-├── src/early_warning/          # کد اصلی سامانه و ماژول‌های مهندسی
+├── src/early_warning/          # کدهای هسته مهندسی و ماژول‌های خط لوله
 └── tests/                      # ۲۶ آزمون خودکار آفلاین
 ```

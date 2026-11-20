@@ -28,14 +28,12 @@ The physical journey of an order on the Olist platform traverses distinct chrono
 
 $$\text{Purchase Click} \xrightarrow{\quad} \text{Payment Approval } (T_0) \xrightarrow{\quad} \text{Carrier Hand-off} \xrightarrow{\quad} \text{Customer Delivery} \xrightarrow{\quad} \text{Review Survey}$$
 
-Engineering analysis demonstrated that the only actionable operational window is at payment approval ($T_0$):
-* **Why not before payment approval?** In Brazil, a large volume of transactions settle via cash vouchers (Boleto Bancário), which take 24 to 48 hours to clear. Many orders are abandoned or rejected prior to approval. Contacting buyers before payment clearance squanders operational quota on non-existent transactions.
-* **Why not after carrier hand-off?** Once `order_delivered_carrier_date` is stamped, the package has physically left the merchant's custody and entered the national postal network (Correios). At this juncture, customer support cannot expedite merchant dispatch, switch courier tiers, or inspect package integrity.
+Engineering analysis demonstrated that the only actionable operational window is at payment approval ($T_0$): prior to payment approval, cash vouchers (Boleto Bancário) take 24 to 48 hours to clear, and many orders expire or cancel before confirmation, which would squander operational quota on non-existent transactions. Conversely, once `order_delivered_carrier_date` is stamped, the parcel has physically left merchant custody and entered the national postal network (Correios), at which juncture customer support can no longer expedite merchant dispatch, switch courier tiers, or inspect package integrity.
 
 Hence, moment $T_0$ (`order_approved_at`) was established as the immutable decision boundary. All model features are strictly restricted to information available at or before this timestamp.
 
 ### 1.2 Target Formulation & Handling of Unreviewed Orders
-Across all 99,441 orders in `olist.orders`, review status distribution in `olist.order_reviews` is as follows (`01_exploration.ipynb` Cell 2):
+Across all 99,441 orders in `olist.orders`, review status distribution in `olist.order_reviews` is as follows (documented in [01_exploration.ipynb](01_exploration.ipynb), Section 1, Cell `In [2]`):
 * Score 1 (Severe Grievance): 11,424 orders (11.51%)
 * Score 2 (Dissatisfied): 3,151 orders (3.18%)
 * **Target Positive Class ($y = 1$, Scores 1 or 2): 14,575 orders (14.69% base rate)**
@@ -44,6 +42,8 @@ Across all 99,441 orders in `olist.orders`, review status distribution in `olist
 * Score 5 (Delighted): 57,328 orders (57.78%)
 * **Unreviewed Orders:** 768 orders (0.77%)
 
+Following schema validation and filtering of records without approval timestamps, the clean modeling dataset comprises 98,518 orders with 14,454 negative reviews (14.67% base rate) (documented in [02_system.ipynb](02_system.ipynb), Section 1, Cell `In [2]`).
+
 **The 768 Unreviewed Orders Dilemma:**  
 A common mistake is either naively dropping these orders or imputing them as 0 (satisfied). Assuming satisfaction introduces sample selection bias, while imputing 1 penalizes merchants unfairly. We implemented a **Quarantine Strategy** (ADR-008): these 768 orders are excluded from supervised training to prevent label noise, but the production inference pipeline is required to score *all* incoming orders at $T_0$, regardless of whether a review is eventually recorded.
 
@@ -51,7 +51,7 @@ A common mistake is either naively dropping these orders or imputing them as 0 (
 
 ## 2. External API Investigation: Failed Hypotheses & The Final Pivot
 
-A key component of this Capstone was exploring, testing, and scientifically justifying an external live data signal. We tested multiple intuitive hypotheses that failed empirical or temporal validity before arriving at our final solution (`01_exploration.ipynb` Cell 6).
+A key component of this Capstone was exploring, testing, and scientifically justifying an external live data signal. We tested multiple intuitive hypotheses that failed empirical or temporal validity before arriving at our final solution (documented in [01_exploration.ipynb](01_exploration.ipynb), Section 3, Cell `In [4]`).
 
 ### 2.1 Attempt 1: Historical Weather Archive (Open-Meteo API) — Rejected
 * **Initial Hypothesis:** Extreme meteorological events (heavy precipitation, windstorms) disrupt highway transport across Brazil, delaying courier trucks and triggering negative reviews.
@@ -79,7 +79,7 @@ We implemented [BrasilAPIHolidayClient](file:///d:/Lab/term%203/stage-4-shayan-g
 
 ## 3. In-Database Feature Engineering & Sub-Millisecond Query SLAs
 
-Per system requirements, feature extraction was executed entirely within PostgreSQL `olist_db` under a strict 500 ms SLA (`02_system.ipynb` Cell 2).
+Per system requirements, feature extraction was executed entirely within PostgreSQL `olist_db` under a strict 500 ms SLA (documented in [02_system.ipynb](02_system.ipynb), Section 1, Cell `In [2]` and execution plan in [sql/views/feature_query_plan.txt](file:///d:/Lab/term%203/stage-4-shayan-ganji/sql/views/feature_query_plan.txt)).
 
 ### 3.1 The Naive Multi-Table Join Bottleneck
 In early development, a naive dynamic SQL query joined 8 relational tables (`orders`, `order_items`, `customers`, `sellers`, `order_payments`, `products`, `geolocation`) with complex window aggregations. This query took **1,240 ms** to execute across the dataset, violating the 500 ms SLA.
@@ -97,20 +97,13 @@ Execution plans documented in [sql/views/feature_query_plan.txt](file:///d:/Lab/
 
 ---
 
-## 4. Why MLflow in the Capstone (and not Stages 1–3)
+## 4. Experiment Lineage & Longitudinal Cohort Backtesting via MLflow
 
-A core architectural question: **Why was MLflow introduced specifically for the Capstone rather than earlier stages?**
+In earlier stages, system requirements focused on data pipelines (Stage 1), database internals (Stage 2), and cross-sectional credit scoring with local artifacts (Stage 3). However, this Capstone operates as a longitudinal decision engine across rolling temporal cohorts, where evaluating model stability over calendar time is paramount.
 
-### 4.1 Evolution Across Project Stages
-* **Stage 1 (Data Factory):** Focused strictly on streaming HTTP ingestion, schema contracts, quarantine partitions, and deterministic hashing. No models were trained.
-* **Stage 2 (Database Performance):** Focused on PostgreSQL internal mechanics: execution plans, B-Tree indexes, stored procedures, and analytical views.
-* **Stage 3 (Credit Risk ML):** A static cross-sectional classification task evaluated on a single train-test split. Saving a joblib artifact and a lightweight dictionary of metrics was sufficient.
-* **Stage 4 (Capstone):** A **longitudinal operational decision engine** operating across rolling temporal cohorts where model stability over time is paramount.
-
-### 4.2 MLflow's Architectural Role in Stage 4
-MLflow was configured to run 100% offline using a local SQLite backend ([mlruns.db](file:///d:/Lab/term%203/stage-4-shayan-ganji/mlruns.db)):
+MLflow was configured to execute 100% offline using a local SQLite backend ([mlruns.db](file:///d:/Lab/term%203/stage-4-shayan-ganji/mlruns.db)), fulfilling three core architectural functions:
 1. **Parent-Child Run Hierarchy for Time-Series Cohort Backtesting:**  
-   The primary model trained on pre-March 2018 data is logged as the **Parent Run**. Then, each of the 6 subsequent evaluation months (March through August 2018) is logged as an independent **Child Run** recording its specific capture rate, precision, operational lift, and sample size. This enables operations to monitor time-series performance stability across time, analogous to quantitative financial backtesting (`02_system.ipynb` Cell 3).
+   The primary model trained on pre-March 2018 data is logged as the **Parent Run**. Then, each of the 6 subsequent evaluation months (March through August 2018) is logged as an independent **Child Run** recording its specific capture rate, precision, operational lift, and sample size. This enables operations to monitor time-series performance stability across time, analogous to quantitative financial backtesting (documented in [02_system.ipynb](02_system.ipynb), Sections 2 & 3, Cells `In [3]` & `In [4]`).
 2. **Capacity Portfolio Tracking:**  
    Rather than tracking a single global ROC-AUC scalar, MLflow logs performance curves and confusion matrices across 5%, 10%, and 20% operational contact quotas.
 3. **Immutable Audit Trail for Data Leakage:**  
@@ -121,7 +114,7 @@ MLflow was configured to run 100% offline using a local SQLite backend ([mlruns.
 ## 5. Temporal Data Leakage Audit & The Deceptive Performance Gap
 
 ### 5.1 Empirical Clean vs. Leaky Benchmark
-To demonstrate the danger of temporal contamination, module [early_warning.models.leakage_benchmark](file:///d:/Lab/term%203/stage-4-shayan-ganji/src/early_warning/models/leakage_benchmark.py) trained two identical LightGBM models on pre-March 2018 orders and evaluated them on the 39,759 test orders (`01_exploration.ipynb` Cell 5):
+To demonstrate the danger of temporal contamination, module [early_warning.models.leakage_benchmark](file:///d:/Lab/term%203/stage-4-shayan-ganji/src/early_warning/models/leakage_benchmark.py) trained two identical LightGBM models on pre-March 2018 orders and evaluated them on the 39,759 test orders (documented in [01_exploration.ipynb](01_exploration.ipynb), Section 4, Cells `In [5]` & `In [6]`):
 
 | Metric | Clean Model ($T_0$ Compliant) | Leaky Model (Contaminated) | Deceptive Absolute Gap | Live Production Impact |
 | :--- | :---: | :---: | :---: | :--- |
@@ -167,7 +160,7 @@ The table below documents all 21 pre-$T_0$ features alongside their behavioral h
 | `is_black_friday_week` | BrasilAPI Calendar | Late-November promotional orders experience systemic backlogs across Brazilian freight carriers. |
 
 ### 6.1 Baseline Comparison with Simple Heuristic Rules (No-Model Benchmarks)
-To test whether a machine learning model is necessary, we benchmarked simple operational heuristic rules against our models (`02_system.ipynb` Cell 4):
+To test whether a machine learning model is necessary, we benchmarked simple operational heuristic rules against our models (documented in [02_system.ipynb](02_system.ipynb), Sections 2 & 4, Cells `In [3]` & `In [5]`):
 
 | Prioritization Approach | Operational Decision Rule | Capture Rate @ 10% | Precision @ 10% | Lift @ 10% |
 | :--- | :--- | :---: | :---: | :---: |
@@ -184,28 +177,45 @@ To test whether a machine learning model is necessary, we benchmarked simple ope
 ## 7. Capacity Portfolio Evaluation & August 2018 Stability
 
 ### 7.1 Capacity Portfolio Benchmarks (5%, 10%, 20%)
-Support leadership can adjust contact quotas based on workforce availability (`02_system.ipynb` Cell 4):
+Support leadership can adjust contact quotas based on workforce availability (documented in [02_system.ipynb](02_system.ipynb), Section 4, Cell `In [5]`):
 
-| Operational Capacity Scenario | Contacted Orders | Negative Review Capture Rate | Precision | Operational Lift |
-| :---: | :---: | :---: | :---: | :---: |
-| **Constrained (5% Quota)** | 1,988 orders | 11.53% | 31.31% | 2.31x |
-| **Standard (10% Quota)** | 3,976 orders | **21.20%** | **28.77%** | **2.12x** |
-| **Expanded (20% Quota)** | 7,952 orders | 38.30% | 25.99% | 1.91x |
+| Operational Capacity Scenario | Contacted Orders | Captured Negatives | Negative Review Capture Rate | Precision | Operational Lift | Decision Threshold |
+| :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| **Constrained (5% Quota)** | 1,988 orders | 709 orders | 13.14% | 35.66% | 2.63x | $\ge 0.6454$ |
+| **Standard (10% Quota)** | 3,976 orders | 1,144 orders | **21.20%** | **28.77%** | **2.12x** | $\ge 0.5586$ |
+| **Expanded (20% Quota)** | 7,952 orders | 1,693 orders | 31.37% | 21.29% | 1.57x | $\ge 0.4980$ |
 
 ### 7.2 Standalone Performance on Final Month (August 2018)
-On the final holdout month of August 2018 (6,368 confirmed orders):
-* **Capture Rate @ 10%:** 21.01%
-* **Precision @ 10%:** 22.36%
-* **Operational Lift:** 2.10x
+On the final holdout month of August 2018 (6,523 total orders with 695 bad reviews, base rate 10.65%) (documented in [02_system.ipynb](02_system.ipynb), Section 5, Cell `In [6]`):
+* **Operational Follow-up Quota (10%):** 653 customer calls
+* **Captured Negatives:** 146 dissatisfied buyers intercepted
+* **Capture Rate @ 10%:** **21.01%**
+* **Precision @ 10%:** **22.36%**
+* **Operational Lift:** **2.10x**
+* **Decision Probability Cutoff:** $\ge 0.5517$
 
 The close alignment between August 2018 (21.01%) and the overall test set (21.20%) confirms that the model generalizes robustly without temporal overfitting.
+
+### 7.3 Longitudinal Multi-Period Backtesting Table (March – August 2018)
+Model generalization stability was logged across all 6 out-of-time monthly cohorts (documented in [02_system.ipynb](02_system.ipynb), Section 6, Cell `In [7]`):
+
+| Evaluation Cohort | Order Volume | Base Negative Rate | Capture Rate @ 10% | Precision @ 10% | Operational Lift | PR-AUC |
+| :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| **March 2018** | 7,150 | 22.95% | 17.25% | 39.58% | 1.72x | 0.3286 |
+| **April 2018** | 6,817 | 13.03% | 23.87% | 31.08% | 2.39x | 0.2444 |
+| **May 2018** | 6,932 | 11.99% | 22.38% | 26.80% | 2.24x | 0.2204 |
+| **June 2018** | 6,141 | 10.78% | 26.28% | 28.29% | 2.62x | 0.2171 |
+| **July 2018** | 6,195 | 10.96% | 20.47% | 22.42% | 2.05x | 0.1816 |
+| **August 2018** | 6,523 | 10.65% | 21.01% | 22.36% | 2.10x | 0.2131 |
+
+The prioritized operational queue of 653 orders was exported to [reports/priority_followup_orders.csv](file:///d:/Lab/term%203/stage-4-shayan-ganji/reports/priority_followup_orders.csv) (documented in [02_system.ipynb](02_system.ipynb), Section 7, Cell `In [8]`).
 
 ---
 
 ## 8. Distribution Drift Analysis & 6-Month Production Degradation Forecast
 
 ### 8.1 Observed Train vs. Test Distribution Shifts
-Comparing orders before March 1, 2018 with orders from March to August 2018 (`02_system.ipynb` Cell 6):
+Comparing orders before March 1, 2018 with orders from March to August 2018 (documented in [02_system.ipynb](02_system.ipynb), Section 6, Cell `In [7]`):
 * `days_to_next_holiday`: Mean shifted from 23.5 days to 32.0 days (+35.9%) due to fewer statutory holidays in Brazilian autumn/winter.
 * `promised_delivery_days`: Mean dropped from 24.6 to 21.4 days (-13.0%) as Olist algorithms tightened delivery commitments.
 * `is_black_friday_week`: Shifted from 7.1% in train to 0% in test (Black Friday occurs only in November).
@@ -214,18 +224,22 @@ Despite these seasonal and platform shifts, model operational lift remained rema
 
 ### 8.2 Six-Month Production Degradation Forecast
 In a live production deployment:
-1. **What breaks first?** Courier freight rate tables and platform SLA promise rules (`freight_ratio` and `promised_delivery_days`). Carrier contracts undergo semi-annual tariff revisions, drifting the calibrated probability distributions.
-2. **How do we detect it?** Weekly tracking of Population Stability Index (PSI) on all 21 pre-$T_0$ features; an automated alert triggers retraining if $\text{PSI} > 0.2$ on core logistics features, or if the 90th percentile predicted probability drifts by more than $\pm 0.05$.
+1. **Initial Vulnerabilities and Drift Dynamics:** Courier freight rate tables and platform SLA promise rules (`freight_ratio` and `promised_delivery_days`). Carrier contracts undergo semi-annual tariff revisions, drifting the calibrated probability distributions.
+2. **Automated Detection and Drift Governance:** Weekly tracking of Population Stability Index (PSI) on all 21 pre-$T_0$ features; an automated alert triggers retraining if $\text{PSI} > 0.2$ on core logistics features, or if the 90th percentile predicted probability drifts by more than $\pm 0.05$.
 
 ---
 
-## 9. Engineering Retrospective & AI Tool Usage Note
+## 9. Transparent AI Usage Disclosure
 
-Delivering this Capstone required synthesizing techniques across all three previous challenges:
-* **Timezone Parsing Trap:** We encountered silent day-difference calculation bugs where naive timestamps interacted with São Paulo local offsets (`America/Sao_Paulo`), resolved by strictly normalizing all database timestamps to UTC.
-* **Execution Budget:** Running the entire master pipeline, from PostgreSQL view deployment and test execution to MLflow logging and dual notebook execution, runs in **42.88 seconds**, well within the 45-minute capstone SLA.
+Implementation and codebase development across the system (including the external holiday API client, temporal audit safeguards, PostgreSQL materialized views, MLflow time-series tracking, capacity evaluation engine, CLI, and automated test suite) were conducted using a vibe-coding workflow with an AI assistant (Antigravity). The assistant was also used for editing and refining the prose of this technical report.
 
-### Candid Note on AI Tool Usage
-During project development, AI tools were utilized strictly as code accelerators for boilerplate engineering tasks: drafting initial unit test method templates, generating initial regex patterns for forbidden column interception, and formatting repetitive markdown tables. 
+However, all hands-on data forensics, architectural trade-offs, and practical troubleshooting were driven directly by my own investigation on the live Olist database:
+* Diagnosing the predictive horizon paradox of Open-Meteo weather data (the 2-week gap between order approval and customer delivery) and proving zero empirical model lift.
+* Identifying the 15-to-40 day publication lag in Banco Central do Brasil inflation releases, proving that contemporary monthly indices introduce fatal lookahead leakage.
+* Grounding the selection of BrasilAPI statutory holidays in Brazilian federal law and the operational reality of Correios postal hub shutdowns during holidays.
+* Resolving the 1,240 ms multi-table join latency bottleneck by engineering an indexed PostgreSQL materialized view, achieving sub-millisecond query execution.
+* Implementing the strict temporal leakage guard across unit tests and the live inference pipeline.
+* Routing the 768 unreviewed orders to a quarantine partition to preserve training data purity.
+* Authoring the 10 architecture decision records in `decisions.md`.
 
-All primary architectural decisions—including defining the strict decision boundary at $T_0$, empirically testing and rejecting weather and inflation APIs, designing PostgreSQL materialized views and composite B-tree indexes, formulating the 10% operational capacity mathematics, structuring parent-child time-series MLflow runs, and diagnosing the deceptive leakage gap—were conceived, calculated, implemented, and verified directly by Shayan Ganji.
+Full responsibility for the architectural decisions, pipeline integrity, empirical findings, and final codebase rests entirely with the author.
